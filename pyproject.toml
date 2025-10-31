@@ -1,14 +1,14 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "yaradb-client"
 version = "0.1.0"
 authors = [
-  { name="Tymofii Shchur Viktorovych", email="tymofiischur@gmail.com" },
+    { name = "Tymofii Shchur", email = "tymofiischur@gmail.com" },
 ]
-description = "Official python client for YaraDB"
+description = "Official Python-client for YaraDB."
 readme = "README.md"
 requires-python = ">=3.8"
 license = { file = "LICENSE" }
@@ -16,14 +16,14 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+    "Development Status :: 4 - Beta",
     "Topic :: Database",
-    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-# --- Зависимости ---
 dependencies = [
-    "requests>=2.20.0" # Главная зависимость
+    "requests>=2.20.0"
 ]
 
 [project.urls]
-Homepage = "https://github.com/illusiOxd/yaradb-client-py" # Измени на URL твоего НОВОГО репозитория
-Repository = "https://github.com/illusiOxd/yaradb" # Ссылка на репозиторий СЕРВЕРА
+Homepage = "https://github.com/illusiOxd/yaradb-client-py"
+"Bug Tracker" = "https://github.com/illusiOxd/yaradb-client-py/issues"
+"Source" = "https://github.com/illusiOxd/yaradb"
