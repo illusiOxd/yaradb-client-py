@@ -9,21 +9,26 @@ class YaraError(Exception):
         self.status_code = status_code
         super().__init__(f"Status code: {status_code}, Error: {message}")
 
+
 class YaraConnectionError(YaraError):
     def __init__(self, host: str, original_error: Exception):
         super().__init__(f"Failed to connect to {host}. Is the server running? Error: {original_error}", None)
+
 
 class YaraNotFoundError(YaraError):
     # Response 404
     pass
 
+
 class YaraConflictError(YaraError):
     # Response 409
     pass
 
+
 class YaraBadRequestError(YaraError):
     # Response 400
     pass
+
 
 # --- Client ---
 
@@ -33,17 +38,26 @@ class YaraClient:
         self.session = requests.Session()
 
     def _handle_response(self, response: requests.Response) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
+        """
+        Handles HTTP response and raises exceptions on errors.
+        Returns JSON data (dict or list) on success.
+        """
+        if response.status_code == 200:
+            try:
+                return response.json()
+            except requests.JSONDecodeError:
+                raise YaraError("Invalid JSON response from server", response.status_code)
+
         try:
             response_json = response.json()
+            if isinstance(response_json, dict):
+                error_detail = response_json.get("detail", "Unknown API error")
+            else:
+                error_detail = str(response_json)
         except requests.JSONDecodeError:
-            response_json = {"detail": response.text}
+            error_detail = response.text or "Unknown API error"
 
-        error_detail = response_json.get("detail", "Unknown API error")
-
-        if response.status_code == 200:
-            return response_json
-
-        elif response.status_code == 404:
+        if response.status_code == 404:
             raise YaraNotFoundError(error_detail, 404)
         elif response.status_code == 409:
             raise YaraConflictError(error_detail, 409)
@@ -66,7 +80,7 @@ class YaraClient:
         payload = {"name": name, "body": body}
         try:
             response = self.session.post(url, json=payload)
-            return self._handle_response(response) # type: ignore
+            return self._handle_response(response)  # type: ignore
         except requests.ConnectionError as e:
             raise YaraConnectionError(self.host, e)
 
@@ -74,7 +88,7 @@ class YaraClient:
         url = f"{self.host}/document/get/{str(doc_id)}"
         try:
             response = self.session.get(url)
-            return self._handle_response(response) # type: ignore
+            return self._handle_response(response)  # type: ignore
         except requests.ConnectionError as e:
             raise YaraConnectionError(self.host, e)
 
@@ -83,7 +97,7 @@ class YaraClient:
         params = {"include_archived": include_archived}
         try:
             response = self.session.post(url, json=filter_body, params=params)
-            return self._handle_response(response) # type: ignore
+            return self._handle_response(response)  # type: ignore
         except requests.ConnectionError as e:
             raise YaraConnectionError(self.host, e)
 
@@ -92,7 +106,7 @@ class YaraClient:
         payload = {"version": version, "body": body}
         try:
             response = self.session.put(url, json=payload)
-            return self._handle_response(response) # type: ignore
+            return self._handle_response(response)  # type: ignore
         except requests.ConnectionError as e:
             raise YaraConnectionError(self.host, e)
 
@@ -100,6 +114,6 @@ class YaraClient:
         url = f"{self.host}/document/archive/{str(doc_id)}"
         try:
             response = self.session.put(url)
-            return self._handle_response(response) # type: ignore
+            return self._handle_response(response)  # type: ignore
         except requests.ConnectionError as e:
             raise YaraConnectionError(self.host, e)

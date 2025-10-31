@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "yaradb-client"
-version = "0.1.0"
+version = "0.1.1"
 authors = [
     { name = "Tymofii Shchur", email = "tymofiischur@gmail.com" },
 ]
