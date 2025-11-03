@@ -1,234 +1,316 @@
-# 📦 YaraDB
+# 🐍 YaraDB Python Client
 
-[![Python Version](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Framework](https://img.shields.io/badge/Framework-FastAPI-green.svg)](https://fastapi.tiangolo.com/)
+> Official Python client for YaraDB - the intelligent in-memory Document Database
+
+[![PyPI version](https://badge.fury.io/py/yaradb-client.svg)](https://pypi.org/project/yaradb-client/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/illusiOxd/yaradb)
-[![Docker](https://img.shields.io/badge/Docker-ready-blue.svg?logo=docker)](https://hub.docker.com/)
 
-**YaraDB is an intelligent, in-memory-first Document DB with crash-safe WAL persistence, built on FastAPI.**
-
-It's designed for projects that need the flexibility of a NoSQL document store but require modern data integrity guarantees like **Optimistic Concurrency Control (OCC)** and **atomic transactions** right out of the box.
+[📖 **Full Documentation**](https://github.com/illusiOxd/yaradb-client-py/wiki) | 
+[🚀 YaraDB Server](https://github.com/illusiOxd/yaradb)
 
 ---
 
-## ⚡ Core Features (v2.0)
+## 📦 Installation
 
-YaraDB isn't just another key-value store. It's a "smart" database that provides critical features at the document level.
-
-* **🛡️ Crash-Safe Persistence (WAL):** All write operations (`create`, `update`, `archive`) are first written to a **Write-Ahead Log (WAL)** before being applied to memory. This guarantees that no data is lost even if the server crashes. The database state is recovered from the WAL on restart.
-
-* **🔄 Optimistic Concurrency Control (OCC):** Every document has a `version` field. The update endpoint requires this version, preventing "lost update" race conditions. If versions mismatch, the API returns a `409 Conflict`.
-
-* **🔐 Data Integrity:** Every document's `body` is automatically hashed into a `body_hash` field. This allows you to verify that data hasn't been corrupted.
-
-* **🗑️ Soft Deletes:** Deleting a document (via `archive`) doesn't destroy it. It just sets an `archived_at` flag, preserving data history for recovery or auditing.
-
-* **⛓️ Atomic Transactions:** (Coming Soon) Batch multiple update/archive operations into a single request. The server will validate all operations first, ensuring the transaction is "all-or-nothing".
-
-* **🚀 Fast In-Memory Indexing:** All documents are indexed in memory by their `_id` (a UUID) for O(1) read performance.
-
----
-
-## 🚀 Quick Start (Docker Compose)
-
-This is the easiest and recommended way to run YaraDB as a persistent service.
-
-1.  **Save the `docker-compose.yml` file:**
-```yaml
-    version: '3.8'
-
-    services:
-      yaradb:
-        image: ghcr.io/illusioxd/yaradb:latest  # (Use the official image once published)
-        # build: .  # (Or build locally if you cloned the repo)
-        container_name: yaradb_server
-        ports:
-          - "8000:8000"
-        volumes:
-          - ./yaradb_data:/app # Mounts a local folder for persistence
-        restart: always
-
-    volumes:
-      yaradb_data:
-```
-    *(Note: You'll need to publish your image to `ghcr.io` or Docker Hub for the `image:` tag to work)*
-
-2.  **Run the service:**
-```bash
-    docker-compose up -d
-```
-
-The server is now running on **http://127.0.0.1:8000**. Your database files (snapshot and WAL) will be safely stored in a `yaradb_data` folder in your current directory.
-
----
-
-## 🐍 Python Client
-
-While you can use any HTTP client, the easiest way to interact with YaraDB from Python is with the official `pip` package.
 ```bash
 pip install yaradb-client
 ```
+
+---
+
+## 🚀 Quick Start
+
+### 1. Start YaraDB Server
+
+**Linux / macOS:**
+```bash
+docker run -d -p 8000:8000 \
+  -v $(pwd)/yaradb_data:/data \
+  -e DATA_DIR=/data \
+  --name yaradb_server \
+  ashfromsky/yaradb:latest
+```
+
+**Windows (PowerShell):**
+```powershell
+docker run -d -p 8000:8000 -v ${PWD}/yaradb_data:/data -e DATA_DIR=/data --name yaradb_server ashfromsky/yaradb:latest
+```
+
+**Windows (CMD):**
+```cmd
+docker run -d -p 8000:8000 -v %cd%/yaradb_data:/data -e DATA_DIR=/data --name yaradb_server ashfromsky/yaradb:latest
+```
+
+### 2. Use the Python Client
+
 ```python
-from yaradb_client import YaraClient, YaraConflictError
+from yaradb_client import YaraClient
 
-client = YaraClient()
+# Connect to server
+client = YaraClient("http://localhost:8000")
 
+# Check connection
 if not client.ping():
     print("Server is offline!")
     exit()
-    
-# 1. Create a document
+
+# Create a document
 doc = client.create(
-    name="user", 
-    body={"username": "alice", "level": 10}
-)
-doc_id = doc["_id"]
-doc_version = doc["version"]
-
-# 2. Update it (this will work)
-updated_doc = client.update(
-    doc_id=doc_id,
-    version=doc_version,
-    body={"username": "alice", "level": 11}
+    name="user_account",
+    body={
+        "username": "alice",
+        "email": "alice@example.com",
+        "level": 1
+    }
 )
 
-# 3. Try to update again with the *old* version (this will fail)
-try:
-    client.update(
-        doc_id=doc_id,
-        version=doc_version, # Sending version 1, but DB is at 2
-        body={"username": "alice", "level": 12}
-    )
-except YaraConflictError as e:
-    print(f"Success! Caught expected error: {e}")
+print(f"Created document: {doc['_id']}")
+print(f"Version: {doc['version']}")
+
+# Get document
+doc = client.get(doc["_id"])
+print(f"Username: {doc['body']['username']}")
+
+# Update document (with optimistic locking)
+updated = client.update(
+    doc_id=doc["_id"],
+    version=doc["version"],  # Must match current version
+    body={
+        "username": "alice",
+        "email": "alice@example.com",
+        "level": 2  # Leveled up!
+    }
+)
+
+# Find documents
+users = client.find({"level": 2})
+print(f"Found {len(users)} level 2 users")
+
+# Archive (soft delete)
+archived = client.archive(doc["_id"])
+print(f"Archived at: {archived['archived_at']}")
 ```
+
+---
+
+## ✨ Features
+
+- 🔄 **Full CRUD Operations** - Create, Read, Update, Archive
+- 🔒 **Optimistic Locking** - Version-based conflict detection
+- 🔍 **Flexible Search** - Filter documents by any field
+- 🗑️ **Soft Deletes** - Archive without data loss
+- 🎯 **Type Hints** - Full IDE autocomplete support
+- 🐍 **Pythonic API** - Clean and intuitive interface
+- ⚡ **Fast** - Direct HTTP communication with YaraDB
 
 ---
 
 ## 📖 API Reference
 
-### POST /document/create
+### Client Initialization
 
-Creates a new document.
+```python
+from yaradb_client import YaraClient
 
-**Request Body:**
-```json
-{
-  "name": "user_account",
-  "body": {
-    "username": "alice",
-    "email": "alice@example.com"
-  }
-}
+client = YaraClient(base_url="http://localhost:8000")
 ```
 
-**Response (200 OK):** The full StandardDocument object.
-```json
-{
-  "_id": "a1b2c3d4-...",
-  "name": "user_account",
-  "body": { "username": "alice", "email": "alice@example.com" },
-  "body_hash": "a9f8b...",
-  "created_at": "2025-10-31T12:00:00Z",
-  "updated_at": null,
-  "version": 1,
-  "archived_at": null
-}
+### Methods
+
+#### `ping() -> bool`
+Check if server is alive.
+
+```python
+if client.ping():
+    print("Server is online!")
 ```
 
-### GET /document/get/{doc_id}
+#### `create(name: str, body: dict) -> dict`
+Create a new document.
 
-Retrieves a single document by its ID (fast, O(1) read).
-
-**Response (200 OK):** The StandardDocument object.
-
-**Response (404 Not Found):** If the document does not exist or has been archived.
-```json
-{
-  "detail": "Document not found"
-}
+```python
+doc = client.create(
+    name="user",
+    body={"username": "bob", "age": 25}
+)
 ```
 
-### PUT /document/update/{doc_id}
+#### `get(doc_id: str) -> dict | None`
+Get document by ID.
 
-Updates a document only if the provided version matches the one in the database.
-
-**Request Body:**
-```json
-{
-  "version": 1, 
-  "body": {
-    "username": "alice_updated",
-    "email": "alice@example.com"
-  }
-}
+```python
+doc = client.get("550e8400-e29b-41d4-a716-446655440000")
 ```
 
-**Response (200 OK):** The updated StandardDocument with version incremented.
+#### `find(filter_body: dict, include_archived: bool = False) -> list[dict]`
+Search documents.
 
-**Response (409 Conflict):** If the provided version does not match the database.
-```json
-{
-  "detail": "Conflict: Document version mismatch. DB is at 2, you sent 1"
-}
+```python
+# Find all users aged 25
+users = client.find({"age": 25})
+
+# Include archived documents
+all_users = client.find({"username": "bob"}, include_archived=True)
 ```
 
-### POST /document/find
+#### `update(doc_id: str, version: int, body: dict) -> dict`
+Update document with optimistic locking.
 
-Finds documents using a filter on the body fields.
-
-**Request Body:**
-```json
-{
-  "username": "alice_updated"
-}
+```python
+updated = client.update(
+    doc_id=doc["_id"],
+    version=doc["version"],  # Must match!
+    body={"username": "bob", "age": 26}
+)
 ```
 
-**Query Params:**
+#### `archive(doc_id: str) -> dict`
+Archive (soft delete) document.
 
-- `include_archived` (bool, optional): Set to true to include archived documents in the search.
-
-**Response (200 OK):** A list of matching StandardDocument objects.
-```json
-[
-  { ...StandardDocument... }
-]
-```
-
-### PUT /document/archive/{doc_id}
-
-Performs a "soft delete" on a document by setting its `archived_at` timestamp.
-
-**Response (200 OK):** The archived StandardDocument object.
-
-**Response (400 Bad Request):** If the document is already archived.
-```json
-{
-  "detail": "Document already archived"
-}
+```python
+archived = client.archive(doc["_id"])
 ```
 
 ---
 
-## 🛠️ Tech Stack
+## 🛡️ Error Handling
 
-- **Python 3.11+**
-- **FastAPI**: For the modern, high-performance API
-- **Pydantic**: For data modeling and validation (StandardDocument)
-- **Uvicorn**: As the ASGI server
-- **Docker**: For containerization and easy deployment
+```python
+from yaradb_client import YaraClient, YaraDBError, ConflictError
+
+client = YaraClient("http://localhost:8000")
+
+try:
+    # Try to update with wrong version
+    client.update(
+        doc_id="some-id",
+        version=1,  # But server has version 5
+        body={"data": "new"}
+    )
+except ConflictError as e:
+    print(f"Version conflict: {e}")
+except YaraDBError as e:
+    print(f"Database error: {e}")
+```
+
+---
+
+## 🔥 Advanced Usage
+
+### Batch Operations
+
+```python
+# Create multiple documents
+users = [
+    {"username": "alice", "level": 1},
+    {"username": "bob", "level": 2},
+    {"username": "charlie", "level": 3}
+]
+
+for user_data in users:
+    client.create(name="user", body=user_data)
+
+# Find all level > 1
+high_level_users = [
+    doc for doc in client.find({})
+    if doc["body"].get("level", 0) > 1
+]
+```
+
+### Optimistic Concurrency Pattern
+
+```python
+def safe_increment_counter(client, doc_id):
+    """Safely increment a counter with retry logic"""
+    max_retries = 5
+    
+    for attempt in range(max_retries):
+        # Get current state
+        doc = client.get(doc_id)
+        if not doc:
+            raise ValueError("Document not found")
+        
+        # Increment counter
+        new_body = doc["body"].copy()
+        new_body["counter"] = new_body.get("counter", 0) + 1
+        
+        try:
+            # Try to update
+            return client.update(
+                doc_id=doc_id,
+                version=doc["version"],
+                body=new_body
+            )
+        except ConflictError:
+            # Someone else updated, retry
+            if attempt == max_retries - 1:
+                raise
+            continue
+```
+
+---
+
+## 🧪 Testing
+
+```python
+import pytest
+from yaradb_client import YaraClient
+
+@pytest.fixture
+def client():
+    return YaraClient("http://localhost:8000")
+
+def test_create_and_get(client):
+    # Create
+    doc = client.create(name="test", body={"value": 42})
+    
+    # Get
+    retrieved = client.get(doc["_id"])
+    assert retrieved["body"]["value"] == 42
+    
+    # Archive
+    client.archive(doc["_id"])
+    
+    # Should not find archived
+    assert client.get(doc["_id"]) is None
+```
+
+---
+
+## 🌐 Multi-Platform Support
+
+This client works on:
+- ✅ Linux
+- ✅ macOS  
+- ✅ Windows
+- ✅ Docker containers
+- ✅ CI/CD pipelines
+
+---
+
+## 📚 Resources
+
+- [YaraDB Server GitHub](https://github.com/illusiOxd/yaradb)
+- [YaraDB Documentation](https://github.com/illusiOxd/yaradb/wiki)
+- [Docker Hub](https://hub.docker.com/r/ashfromsky/yaradb)
+- [Report Issues](https://github.com/illusiOxd/yaradb-client-py/issues)
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please read our CONTRIBUTING.md to understand the process and our Contributor License Agreement (CLA).
-
-Feel free to open issues for bugs, feature requests, or questions.
+Contributions welcome! Please read the [Contributing Guide](CONTRIBUTING.md).
 
 ---
 
-## 📝 License
+## 📄 License
 
-This project is licensed under the MIT License. See the file for details.
+MIT © 2025 Tymofii Shchur Viktorovych
+
+---
+
+## 🔗 Links
+
+- **Client Repository:** https://github.com/illusiOxd/yaradb-client-py
+- **Server Repository:** https://github.com/illusiOxd/yaradb
+- **PyPI Package:** https://pypi.org/project/yaradb-client/
