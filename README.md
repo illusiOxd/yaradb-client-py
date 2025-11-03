@@ -5,7 +5,7 @@
 [![PyPI version](https://badge.fury.io/py/yaradb-client.svg)](https://pypi.org/project/yaradb-client/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-[📖 **Full Documentation**](https://github.com/illusiOxd/yaradb-client-py/wiki) | 
+[📖 **Full Documentation**]([https://github.com/illusiOxd/yaradb-client-py/wiki](https://github.com/illusiOxd/yaradb-client-py/wiki/YaraDB-Client-documentation)) | 
 [🚀 YaraDB Server](https://github.com/illusiOxd/yaradb)
 
 ---
