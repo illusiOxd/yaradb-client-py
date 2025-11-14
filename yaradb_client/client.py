@@ -118,11 +118,16 @@ class YaraClient:
         except requests.ConnectionError as e:
             raise YaraConnectionError(self.host, e)
 
-    def combine(self, name: str, body: dict[str, Any], merge_strategy: str) -> Dict[str, Any]:
+    def combine(self, document_ids: List[Union[str, uuid.UUID]], name: str, merge_strategy: str = "overwrite") -> Dict[
+        str, Any]:
         url = f"{self.host}/document/combine"
+        payload = {
+            "name": name,
+            "document_ids": [str(doc_id) for doc_id in document_ids],
+            "merge_strategy": merge_strategy
+        }
         try:
-            payload = {"name": name, "body": body, "merge_strategy": merge_strategy}
             response = self.session.post(url, json=payload)
-            return self._handle_response(response) # type: ignore
+            return self._handle_response(response)  # type: ignore
         except requests.ConnectionError as e:
             raise YaraConnectionError(self.host, e)
