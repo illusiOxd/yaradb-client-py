@@ -117,3 +117,12 @@ class YaraClient:
             return self._handle_response(response)  # type: ignore
         except requests.ConnectionError as e:
             raise YaraConnectionError(self.host, e)
+
+    def combine(self, name: str, body: dict[str, Any], merge_strategy: str) -> Dict[str, Any]:
+        url = f"{self.host}/document/combine"
+        try:
+            payload = {"name": name, "body": body, "merge_strategy": merge_strategy}
+            response = self.session.post(url, json=payload)
+            return self._handle_response(response) # type: ignore
+        except requests.ConnectionError as e:
+            raise YaraConnectionError(self.host, e)
