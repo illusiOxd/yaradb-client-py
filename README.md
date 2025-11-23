@@ -6,177 +6,326 @@
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/illusiOxd/yaradb)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue.svg?logo=docker)](https://hub.docker.com/)
 
-**YaraDB is an intelligent, in-memory-first Document DB with crash-safe WAL persistence, built on FastAPI.**
+**YaraDB is an intelligent, in-memory-first Document Database with crash-safe WAL persistence and schema enforcement, built on FastAPI.**
 
-It's designed for projects that need the flexibility of a NoSQL document store but require modern data integrity guarantees like **Optimistic Concurrency Control (OCC)** and **atomic transactions** right out of the box.
-
----
-
-## ⚡ Core Features (v2.0)
-
-YaraDB isn't just another key-value store. It's a "smart" database that provides critical features at the document level.
-
-* **🛡️ Crash-Safe Persistence (WAL):** All write operations (`create`, `update`, `archive`) are first written to a **Write-Ahead Log (WAL)** before being applied to memory. This guarantees that no data is lost even if the server crashes. The database state is recovered from the WAL on restart.
-
-* **🔄 Optimistic Concurrency Control (OCC):** Every document has a `version` field. The update endpoint requires this version, preventing "lost update" race conditions. If versions mismatch, the API returns a `409 Conflict`.
-
-* **🔐 Data Integrity:** Every document's `body` is automatically hashed into a `body_hash` field. This allows you to verify that data hasn't been corrupted.
-
-* **🗑️ Soft Deletes:** Deleting a document (via `archive`) doesn't destroy it. It just sets an `archived_at` flag, preserving data history for recovery or auditing.
-
-* **⛓️ Atomic Transactions:** (Coming Soon) Batch multiple update/archive operations into a single request. The server will validate all operations first, ensuring the transaction is "all-or-nothing".
-
-* **🚀 Fast In-Memory Indexing:** All documents are indexed in memory by their `_id` (a UUID) for O(1) read performance.
+It bridges the gap between the flexibility of NoSQL and the reliability of schema-enforced databases, providing modern data integrity guarantees like **Optimistic Concurrency Control (OCC)**, **unique constraints**, and **atomic transactions** right out of the box.
 
 ---
 
-## 🚀 Quick Start (Docker Compose)
+## ⚡ Core Features (v3.0)
 
-This is the easiest and recommended way to run YaraDB as a persistent service.
+YaraDB v3.0 introduces **Structured Tables** and powerful data validation mechanisms while maintaining blazing-fast in-memory performance.
 
-1.  **Save the `docker-compose.yml` file:**
+* **🗂️ Structured Table Management:** Organize documents into logical tables with configurable modes:
+  * **Free Mode** (Default): Schemaless, on-the-fly table creation for rapid prototyping
+  * **Strict Mode**: Enforce JSON Schema validation on all write operations
+  * **Read-Only Mode**: Archive historical data with write protection
+
+* **🛡️ Crash-Safe Persistence (WAL):** All write operations are logged to a **Write-Ahead Log** before being applied to memory. The database state is fully recoverable on restart, with table metadata and schemas preserved.
+
+* **🔒 Unique Constraints:** Enforce field-level uniqueness (e.g., email addresses, usernames) atomically during create and update operations. Violations return immediate errors.
+
+* **🔄 Optimistic Concurrency Control (OCC):** Every document has a `version` field. Updates require version matching to prevent "lost update" race conditions. Mismatches return `409 Conflict`.
+
+* **🔐 Data Integrity:** Automatic `body_hash` generation for every document, allowing you to verify data hasn't been corrupted.
+
+* **🗑️ Soft Deletes:** Archive documents instead of destroying them, preserving data history for recovery or auditing.
+
+* **🚀 Fast In-Memory Indexing:** O(1) read performance with UUID-based document indexing.
+
+---
+
+## 🚀 Quick Start (Docker)
+
+The easiest way to run YaraDB v3.0 as a persistent service.
+
+### Option 1: Docker Compose
+
+**Save the `docker-compose.yml` file:**
 ```yaml
-    version: '3.8'
+version: '3.8'
 
-    services:
-      yaradb:
-        image: ghcr.io/illusioxd/yaradb:latest  # (Use the official image once published)
-        # build: .  # (Or build locally if you cloned the repo)
-        container_name: yaradb_server
-        ports:
-          - "8000:8000"
-        volumes:
-          - ./yaradb_data:/app # Mounts a local folder for persistence
-        restart: always
-
+services:
+  yaradb:
+    image: ghcr.io/illusioxd/yaradb:v3
+    container_name: yaradb_server
+    ports:
+      - "8000:8000"
     volumes:
-      yaradb_data:
-```
-    *(Note: You'll need to publish your image to `ghcr.io` or Docker Hub for the `image:` tag to work)*
+      - ./yaradb_data:/data
+    environment:
+      - DATA_DIR=/data
+    restart: always
 
-2.  **Run the service:**
+volumes:
+  yaradb_data:
+```
+
+**Run the service:**
 ```bash
-    docker-compose up -d
+docker-compose up -d
 ```
 
-The server is now running on **http://127.0.0.1:8000**. Your database files (snapshot and WAL) will be safely stored in a `yaradb_data` folder in your current directory.
+### Option 2: Docker Run
+
+```bash
+docker run -d -p 8000:8000 \
+  -v $(pwd)/yaradb_data:/data \
+  -e DATA_DIR=/data \
+  --name yaradb_server \
+  ghcr.io/illusioxd/yaradb:v3
+```
+
+The server is now running on **http://127.0.0.1:8000**. Your database files will be safely stored in the `yaradb_data` folder.
 
 ---
 
 ## 🐍 Python Client
 
-While you can use any HTTP client, the easiest way to interact with YaraDB from Python is with the official `pip` package.
+Install the official Python client:
 ```bash
 pip install yaradb-client
 ```
+
+### Basic Usage (v3.0)
+
 ```python
-from yaradb_client import YaraClient, YaraConflictError
+from yaradb_client import YaraClient, YaraConflictError, YaraBadRequestError
 
 client = YaraClient()
 
 if not client.ping():
     print("Server is offline!")
     exit()
-    
-# 1. Create a document
+
+# 1. Create a strict table with schema and unique constraints
+client.create_table(
+    name="users",
+    mode="strict",
+    unique_fields=["email"],
+    schema={
+        "type": "object",
+        "required": ["email", "age", "username"],
+        "properties": {
+            "email": {"type": "string"},
+            "age": {"type": "integer"},
+            "username": {"type": "string"}
+        }
+    }
+)
+
+# 2. Create a valid document
 doc = client.create(
-    name="user", 
-    body={"username": "alice", "level": 10}
+    table_name="users",
+    name="alice_user",
+    body={
+        "username": "alice",
+        "email": "alice@example.com",
+        "age": 25
+    }
 )
 doc_id = doc["_id"]
 doc_version = doc["version"]
 
-# 2. Update it (this will work)
+# 3. Try to create a duplicate (this will fail due to unique constraint)
+try:
+    client.create(
+        table_name="users",
+        name="bob_user",
+        body={
+            "username": "bob",
+            "email": "alice@example.com",  # Same email!
+            "age": 30
+        }
+    )
+except YaraBadRequestError as e:
+    print(f"Expected error: {e}")  # Unique constraint violation
+
+# 4. Update with version control
 updated_doc = client.update(
     doc_id=doc_id,
     version=doc_version,
-    body={"username": "alice", "level": 11}
+    body={
+        "username": "alice_updated",
+        "email": "alice@example.com",
+        "age": 26
+    }
 )
 
-# 3. Try to update again with the *old* version (this will fail)
+# 5. Try to update with old version (this will fail)
 try:
     client.update(
         doc_id=doc_id,
-        version=doc_version, # Sending version 1, but DB is at 2
-        body={"username": "alice", "level": 12}
+        version=doc_version,  # Old version
+        body={
+            "username": "alice_wrong",
+            "email": "alice@example.com",
+            "age": 27
+        }
     )
 except YaraConflictError as e:
-    print(f"Success! Caught expected error: {e}")
+    print(f"Expected conflict: {e}")
+```
+
+### Table Management
+
+```python
+# List all tables
+tables = client.list_tables()
+print(tables)
+
+# Get table details
+table_info = client.get_table("users")
+print(f"Mode: {table_info['mode']}, Documents: {table_info['documents_count']}")
+
+# Get all documents in a table
+docs = client.get_table_documents("users")
+
+# Delete a table
+client.delete_table("users")
 ```
 
 ---
 
 ## 📖 API Reference
 
-### POST /document/create
+### Table Operations (New in v3.0)
 
-Creates a new document.
+#### POST /table/create
+
+Creates a new table with specific configuration.
 
 **Request Body:**
 ```json
 {
-  "name": "user_account",
-  "body": {
-    "username": "alice",
-    "email": "alice@example.com"
+  "name": "users",
+  "mode": "strict",
+  "read_only": false,
+  "unique_fields": ["email"],
+  "schema_definition": {
+    "type": "object",
+    "required": ["email", "age"],
+    "properties": {
+      "email": {"type": "string"},
+      "age": {"type": "integer"}
+    }
   }
 }
 ```
 
-**Response (200 OK):** The full StandardDocument object.
+**Response (200 OK):**
+```json
+{
+  "name": "users",
+  "mode": "strict",
+  "read_only": false,
+  "unique_fields": ["email"],
+  "schema_definition": {...},
+  "created_at": "2025-11-23T12:00:00Z",
+  "documents_count": 0
+}
+```
+
+#### GET /table/list
+
+Returns a list of all tables.
+
+#### GET /table/{name}
+
+Retrieves table metadata and statistics.
+
+#### DELETE /table/{name}
+
+Deletes a table and all its documents.
+
+#### GET /table/{name}/documents
+
+Returns all documents in a specific table.
+
+---
+
+### Document Operations
+
+#### POST /document/create
+
+Creates a new document in a specified table.
+
+**Request Body (v3.0 - table_name is now mandatory):**
+```json
+{
+  "table_name": "users",
+  "name": "user_account",
+  "body": {
+    "username": "alice",
+    "email": "alice@example.com",
+    "age": 25
+  }
+}
+```
+
+**Response (200 OK):**
 ```json
 {
   "_id": "a1b2c3d4-...",
   "name": "user_account",
-  "body": { "username": "alice", "email": "alice@example.com" },
+  "table_name": "users",
+  "body": {
+    "username": "alice",
+    "email": "alice@example.com",
+    "age": 25
+  },
   "body_hash": "a9f8b...",
-  "created_at": "2025-10-31T12:00:00Z",
+  "created_at": "2025-11-23T12:00:00Z",
   "updated_at": null,
   "version": 1,
   "archived_at": null
 }
 ```
 
-### GET /document/get/{doc_id}
-
-Retrieves a single document by its ID (fast, O(1) read).
-
-**Response (200 OK):** The StandardDocument object.
-
-**Response (404 Not Found):** If the document does not exist or has been archived.
+**Error (400 Bad Request) - Schema Validation:**
 ```json
 {
-  "detail": "Document not found"
+  "detail": "Schema validation failed: 'age' is a required property"
 }
 ```
 
-### PUT /document/update/{doc_id}
+**Error (400 Bad Request) - Unique Constraint:**
+```json
+{
+  "detail": "Unique constraint violation on field 'email'"
+}
+```
 
-Updates a document only if the provided version matches the one in the database.
+#### GET /document/get/{doc_id}
+
+Retrieves a single document by ID (O(1) lookup).
+
+#### PUT /document/update/{doc_id}
+
+Updates a document with optimistic concurrency control.
 
 **Request Body:**
 ```json
 {
-  "version": 1, 
+  "version": 1,
   "body": {
     "username": "alice_updated",
-    "email": "alice@example.com"
+    "email": "alice@example.com",
+    "age": 26
   }
 }
 ```
 
-**Response (200 OK):** The updated StandardDocument with version incremented.
-
-**Response (409 Conflict):** If the provided version does not match the database.
+**Response (409 Conflict) - Version Mismatch:**
 ```json
 {
   "detail": "Conflict: Document version mismatch. DB is at 2, you sent 1"
 }
 ```
 
-### POST /document/find
+#### POST /document/find
 
-Finds documents using a filter on the body fields.
+Finds documents using a filter on body fields.
 
 **Request Body:**
 ```json
@@ -185,28 +334,67 @@ Finds documents using a filter on the body fields.
 }
 ```
 
-**Query Params:**
+**Query Parameters:**
+- `include_archived` (bool): Include archived documents in results
 
-- `include_archived` (bool, optional): Set to true to include archived documents in the search.
+#### PUT /document/archive/{doc_id}
 
-**Response (200 OK):** A list of matching StandardDocument objects.
-```json
-[
-  { ...StandardDocument... }
-]
-```
+Performs a soft delete on a document.
 
-### PUT /document/archive/{doc_id}
+#### POST /document/combine
 
-Performs a "soft delete" on a document by setting its `archived_at` timestamp.
+Combines multiple documents into a single new document.
 
-**Response (200 OK):** The archived StandardDocument object.
-
-**Response (400 Bad Request):** If the document is already archived.
+**Request Body:**
 ```json
 {
-  "detail": "Document already archived"
+  "name": "combined_doc",
+  "document_ids": ["doc-id-1", "doc-id-2"],
+  "merge_strategy": "overwrite"
 }
+```
+
+---
+
+### System Operations
+
+#### DELETE /system/self-destruct
+
+**⚠️ DANGER: Wipes all data from the database. USE WITH EXTREME CAUTION.**
+
+**Request Body:**
+```json
+{
+  "verification_phrase": "BDaray",
+  "safety_pin": 2026,
+  "confirm": true
+}
+```
+
+---
+
+## 🔄 Migration from v2.x to v3.0
+
+### Breaking Changes
+
+1. **Mandatory table_name in document creation:**
+   ```python
+   # OLD (v2.x)
+   client.create(name="doc1", body={"val": 1})
+   
+   # NEW (v3.0)
+   client.create(table_name="default", name="doc1", body={"val": 1})
+   ```
+
+2. **Storage format change:**
+   - Recommended: Delete existing `yaradb_storage.json` and `yaradb_wal` files
+   - The database will automatically migrate to the new format
+
+### Updated Python Client
+
+Update to the latest client version:
+```bash
+pip install --upgrade yaradb-client
 ```
 
 ---
@@ -214,10 +402,20 @@ Performs a "soft delete" on a document by setting its `archived_at` timestamp.
 ## 🛠️ Tech Stack
 
 - **Python 3.11+**
-- **FastAPI**: For the modern, high-performance API
-- **Pydantic**: For data modeling and validation (StandardDocument)
-- **Uvicorn**: As the ASGI server
-- **Docker**: For containerization and easy deployment
+- **FastAPI**: Modern, high-performance API framework
+- **Pydantic**: Data modeling and validation
+- **Uvicorn**: ASGI server
+- **Docker**: Containerization and deployment
+
+---
+
+## 🎯 Use Cases
+
+- **Rapid Prototyping**: Start schemaless, enforce structure later
+- **Configuration Management**: Store validated config with unique keys
+- **User Management**: Enforce unique emails/usernames with schema validation
+- **Audit Logs**: Write-once tables with read-only mode
+- **Session Storage**: Fast in-memory lookups with persistence
 
 ---
 
@@ -231,4 +429,17 @@ Feel free to open issues for bugs, feature requests, or questions.
 
 ## 📝 License
 
-This project is licensed under the MIT License. See the file for details.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+---
+
+## 🔗 Links
+
+- **GitHub Repository**: [github.com/illusiOxd/yaradb](https://github.com/illusiOxd/yaradb)
+- **Python Client**: [github.com/illusiOxd/yaradb-client-py](https://github.com/illusiOxd/yaradb-client-py)
+- **Docker Hub**: Coming soon
+- **Documentation**: Coming soon
+
+---
+
+**Made with ❤️ by [Tymofii Shchur](https://github.com/illusiOxd)**

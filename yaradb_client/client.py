@@ -1,6 +1,6 @@
 import requests
 import uuid
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, Optional
 
 
 class YaraError(Exception):
@@ -63,6 +63,8 @@ class YaraClient:
             raise YaraConflictError(error_detail, 409)
         elif response.status_code == 400:
             raise YaraBadRequestError(error_detail, 400)
+        elif response.status_code == 422:
+            raise YaraBadRequestError(f"Validation Error: {error_detail}", 422)
         else:
             raise YaraError(error_detail, response.status_code)
 
@@ -75,9 +77,21 @@ class YaraClient:
         except requests.Timeout:
             return False
 
-    def create(self, name: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    # --- Document Operations ---
+
+    def create(self, table_name: str, name: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Creates a new document in the specified table.
+        :param table_name: Name of the table (required in v3.0)
+        :param name: Name of the document
+        :param body: Document content
+        """
         url = f"{self.host}/document/create"
-        payload = {"name": name, "body": body}
+        payload = {
+            "table_name": table_name,
+            "name": name,
+            "body": body
+        }
         try:
             response = self.session.post(url, json=payload)
             return self._handle_response(response)  # type: ignore
@@ -118,11 +132,102 @@ class YaraClient:
         except requests.ConnectionError as e:
             raise YaraConnectionError(self.host, e)
 
-    def combine(self, name: str, body: dict[str, Any], merge_strategy: str) -> Dict[str, Any]:
+    def combine(self, document_ids: List[Union[str, uuid.UUID]], name: str, merge_strategy: str = "overwrite") -> Dict[str, Any]:
         url = f"{self.host}/document/combine"
+        payload = {
+            "name": name,
+            "document_ids": [str(doc_id) for doc_id in document_ids],
+            "merge_strategy": merge_strategy
+        }
         try:
-            payload = {"name": name, "body": body, "merge_strategy": merge_strategy}
             response = self.session.post(url, json=payload)
-            return self._handle_response(response) # type: ignore
+            return self._handle_response(response)  # type: ignore
+        except requests.ConnectionError as e:
+            raise YaraConnectionError(self.host, e)
+
+    # --- Table Operations (New in v3.0) ---
+
+    def create_table(
+        self,
+        name: str,
+        mode: str = "free",
+        schema: Optional[Dict[str, Any]] = None,
+        unique_fields: Optional[List[str]] = None,
+        read_only: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Creates a new table with specific configuration.
+        :param name: Table name
+        :param mode: 'free' (schemaless) or 'strict' (enforces schema)
+        :param schema: JSON Schema definition (required for strict mode)
+        :param unique_fields: List of fields that must be unique
+        :param read_only: If True, table accepts no writes
+        """
+        url = f"{self.host}/table/create"
+        payload = {
+            "name": name,
+            "mode": mode,
+            "read_only": read_only
+        }
+        if schema:
+            payload["schema_definition"] = schema
+        if unique_fields:
+            payload["unique_fields"] = unique_fields
+
+        try:
+            response = self.session.post(url, json=payload)
+            return self._handle_response(response)  # type: ignore
+        except requests.ConnectionError as e:
+            raise YaraConnectionError(self.host, e)
+
+    def list_tables(self) -> List[Dict[str, Any]]:
+        url = f"{self.host}/table/list"
+        try:
+            response = self.session.get(url)
+            return self._handle_response(response)  # type: ignore
+        except requests.ConnectionError as e:
+            raise YaraConnectionError(self.host, e)
+
+    def get_table(self, name: str) -> Dict[str, Any]:
+        url = f"{self.host}/table/{name}"
+        try:
+            response = self.session.get(url)
+            return self._handle_response(response)  # type: ignore
+        except requests.ConnectionError as e:
+            raise YaraConnectionError(self.host, e)
+
+    def delete_table(self, name: str) -> Dict[str, Any]:
+        url = f"{self.host}/table/{name}"
+        try:
+            response = self.session.delete(url)
+            return self._handle_response(response)  # type: ignore
+        except requests.ConnectionError as e:
+            raise YaraConnectionError(self.host, e)
+
+    def get_table_documents(self, name: str) -> List[Dict[str, Any]]:
+        url = f"{self.host}/table/{name}/documents"
+        try:
+            response = self.session.get(url)
+            return self._handle_response(response)  # type: ignore
+        except requests.ConnectionError as e:
+            raise YaraConnectionError(self.host, e)
+
+    # --- System Operations ---
+
+    def self_destruct(self, verification_phrase: str, safety_pin: int, confirm: bool = True) -> Dict[str, Any]:
+        """
+        Wipes all data from the database. USE WITH CAUTION.
+        :param verification_phrase: Must be 'BDaray'
+        :param safety_pin: Usually (Current Year + 1)
+        """
+        url = f"{self.host}/system/self-destruct"
+        payload = {
+            "verification_phrase": verification_phrase,
+            "safety_pin": safety_pin,
+            "confirm": confirm
+        }
+        try:
+            response = self.session.request("DELETE", url, json=payload)
+            return self._handle_response(response)  # type: ignore
         except requests.ConnectionError as e:
             raise YaraConnectionError(self.host, e)
